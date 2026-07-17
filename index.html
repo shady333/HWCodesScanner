@@ -231,6 +231,32 @@
   .status-line.err{ color:var(--danger-red); }
   .status-line.ok{ color:var(--success-green); }
 
+  /* Temporary debug readout — shows exactly what Tesseract returned before
+     any regex filtering, so preprocessing/recognition issues are visible.
+     Remove this block (and its markup + JS) once recognition is dialed in. */
+  .debug-line{
+    margin:10px auto 0;
+    max-width:480px;
+    font-size:11px;
+    line-height:1.5;
+    color:var(--electric-yellow);
+    background:var(--asphalt-mid);
+    border:1px dashed var(--hairline);
+    border-radius:4px;
+    padding:8px 10px;
+    text-align:left;
+    word-break:break-all;
+  }
+  .debug-line .debug-tag{
+    display:block;
+    font-family:'Oswald',sans-serif;
+    font-size:9px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--chrome-dim);
+    margin-bottom:3px;
+  }
+
   /* ---------- Camera error card ---------- */
   .cam-error{
     display:none;
@@ -478,6 +504,10 @@
       <span class="label">SCAN</span>
     </button>
     <div class="status-line" id="statusLine">Starting camera…</div>
+    <div class="debug-line" id="debugLine">
+      <span class="debug-tag">Raw OCR (debug)</span>
+      <span id="debugText">—</span>
+    </div>
   </div>
 </section>
 

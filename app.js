@@ -36,6 +36,7 @@
   var zoomButtons = document.getElementById('zoomButtons');
   var zoomSlider = document.getElementById('zoomSlider');
   var zoomValueLabel = document.getElementById('zoomValueLabel');
+  var debugText = document.getElementById('debugText');
 
   /* ---------------- Storage ---------------- */
   function loadCollection(){
@@ -285,7 +286,13 @@
       histogram[Math.round(g)]++;
     }
 
-    var threshold = otsuThreshold(histogram, n);
+    /* Pure Otsu can swing to an extreme threshold when the crop is mostly
+       mid-tone (e.g. red ink on tan cardboard isn't strongly bimodal), which
+       wipes the text into solid white or solid black instead of preserving
+       it. Blend the Otsu result toward a moderate midpoint (~128) and clamp
+       it to a sane band so red-on-cardboard text survives binarization. */
+    var rawThreshold = otsuThreshold(histogram, n);
+    var threshold = clamp(Math.round((rawThreshold + 128) / 2), 100, 150);
 
     var blackCount = 0;
     for(p = 0; p < n; p++){
@@ -345,13 +352,19 @@
     try{
       var result = await tesseractWorker.recognize(crop);
       var raw = (result && result.data && result.data.text) ? result.data.text : '';
+
+      /* Temporary debug output: show exactly what Tesseract read, before
+         any regex filtering, so it's clear whether misses are an OCR
+         problem or a filtering problem. */
+      debugText.textContent = raw.trim() ? raw.trim().replace(/\s+/g, ' ') : '(empty — Tesseract returned no text)';
+
       var code = extractCode(raw);
 
       if(code){
         addOrIncrement(code);
         setStatus('Scanned ' + code + '.', 'ok');
       }else{
-        setStatus('No valid code found — steady the shot and try again.', 'err');
+        setStatus('No valid code found — check "Raw OCR" below.', 'err');
       }
     }catch(err){
       console.error(err);
@@ -368,20 +381,24 @@
      characters, etc). Toy Numbers are typically 5-7 alphanumeric characters,
      most often 2-3 letters followed by 2-3 digits (e.g. HYW53, HKG34). */
   function extractCode(rawText){
-    var strictPattern = /^[A-Z]{2,3}[0-9]{2,3}$/;
-    var genericPattern = /^[A-Z0-9]{5,7}$/;
+    var strictPattern = /^[A-Z]{2,4}[0-9]{2,4}$/;
+    var genericPattern = /^[A-Z0-9]{5,8}$/;
 
-    /* Pass 1: check whitespace-delimited tokens individually first, so a
-       separate stamp (e.g. "21A") sitting next to the real code on the same
-       line can't get glued onto it. */
+    /* Pass 1: split on whitespace AND hyphens/dashes, then check each
+       resulting token on its own. Hot Wheels packaging often prints the
+       primary Toy Number next to a secondary casting/date number joined by
+       a hyphen (e.g. "JBB55-N522") — splitting on the hyphen keeps those
+       from merging into one long, unmatchable string, and also stops an
+       unrelated stamp (e.g. "21A") sitting on the same line from gluing
+       onto the real code. */
     var tokens = rawText
       .toUpperCase()
-      .split(/\s+/)
+      .split(/[\s\-–—_]+/)
       .map(function(t){ return t.replace(/[^A-Z0-9]/g, ''); })
       .filter(Boolean);
 
     var strictToken = tokens.find(function(t){
-      return strictPattern.test(t) && t.length >= 5 && t.length <= 7;
+      return strictPattern.test(t) && t.length >= 5 && t.length <= 8;
     });
     if(strictToken) return strictToken;
 
@@ -390,18 +407,19 @@
     });
     if(genericToken) return genericToken;
 
-    /* Pass 2 (fallback): OCR sometimes drops the space between the code and
-       nearby noise, so also scan the fully concatenated string for a
-       plausible run — this still filters out pure single-character noise
+    /* Pass 2 (fallback): OCR sometimes drops the separator between the code
+       and nearby noise entirely, so also scan the fully concatenated string
+       (hyphens and spaces stripped) for any plausible 5-8 character
+       alphanumeric run — this still filters out pure single-character noise
        like "2", "4", or "A". */
     var cleaned = rawText.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if(!cleaned) return null;
 
-    var strictMatches = cleaned.match(/[A-Z]{2,3}[0-9]{2,3}/g) || [];
-    var strictHit = strictMatches.find(function(m){ return m.length >= 5 && m.length <= 7; });
+    var strictMatches = cleaned.match(/[A-Z]{2,4}[0-9]{2,4}/g) || [];
+    var strictHit = strictMatches.find(function(m){ return m.length >= 5 && m.length <= 8; });
     if(strictHit) return strictHit;
 
-    var genericMatches = cleaned.match(/[A-Z0-9]{5,7}/g) || [];
+    var genericMatches = cleaned.match(/[A-Z0-9]{5,8}/g) || [];
     var genericHit = genericMatches.find(function(m){
       return /[A-Z]/.test(m) && /[0-9]/.test(m);
     });
