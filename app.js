@@ -144,15 +144,21 @@
   function handleInput() {
     const raw = els.input.value;
 
-    // iOS Live Text can insert stray spaces or lowercase letters
-    // (e.g. "jbb 55-n522"). Normalize so the field shows, and the
-    // user edits, a clean value before anything is saved.
+    // iOS Live Text can insert stray spaces, lowercase letters, or
+    // surrounding noise (e.g. "fncontrol jbb55"). Normalize first...
     const sanitized = raw.replace(/\s+/g, "").toUpperCase();
-    if (sanitized !== raw) {
-      els.input.value = sanitized;
+
+    // ...then pull out just the valid 5-character code if one is
+    // present, so the confirmation field only ever shows the clean
+    // code rather than whatever else iOS grabbed around it.
+    const match = sanitized.match(CODE_PATTERN);
+    const cleaned = match ? match[0] : sanitized;
+
+    if (cleaned !== raw) {
+      els.input.value = cleaned;
     }
 
-    if (sanitized.length > 0) {
+    if (cleaned.length > 0) {
       showConfirmation();
     } else {
       hideConfirmation();
@@ -363,7 +369,7 @@
   // ---------- Init ----------
 
   function init() {
-    els.input.addEventListener("input", handleInput);
+    els.input.addEventListener("change", handleInput);
     els.input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
