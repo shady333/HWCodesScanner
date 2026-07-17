@@ -132,6 +132,42 @@
     line-height: 1.5;
   }
 
+  #confirmation-actions {
+    display: none;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  #confirmation-actions.show {
+    display: flex;
+  }
+
+  .confirm-btn,
+  .clear-btn {
+    flex: 1;
+    border: none;
+    border-radius: var(--radius);
+    padding: 14px 12px;
+    font-family: "Arial Black", Arial, sans-serif;
+    font-weight: 900;
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .confirm-btn {
+    background: var(--green);
+    color: #0d2414;
+  }
+  .confirm-btn:active { background: #3bb45f; }
+
+  .clear-btn {
+    background: var(--bg-inset);
+    color: var(--white);
+    border: 1px solid var(--gray-border);
+  }
+  .clear-btn:active { background: #1c1c1c; }
+
   .toast {
     min-height: 20px;
     margin-top: 10px;
@@ -323,6 +359,28 @@
     cursor: not-allowed;
   }
 
+  .clear-all-btn {
+    width: 100%;
+    background: transparent;
+    color: var(--red);
+    border: 1px solid var(--red);
+    border-radius: var(--radius);
+    padding: 13px 12px;
+    margin-top: 10px;
+    font-family: "Arial Black", Arial, sans-serif;
+    font-weight: 900;
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .clear-all-btn:active { background: rgba(255,77,77,0.12); }
+  .clear-all-btn:disabled {
+    color: var(--gray-text);
+    border-color: var(--gray-border);
+    cursor: not-allowed;
+  }
+
   @media (min-width: 480px) {
     .car-row {
       grid-template-columns: 1fr auto auto;
@@ -358,7 +416,11 @@
         spellcheck="false"
       >
     </div>
-    <p class="scan-hint">Tap the field, then use your keyboard's <strong>Scan Text</strong> camera icon to capture a car's toy number. Codes are added automatically.</p>
+    <div id="confirmation-actions">
+      <button id="confirm-add-btn" class="confirm-btn" type="button">Confirm &amp; Add</button>
+      <button id="clear-input-btn" class="clear-btn" type="button">Clear</button>
+    </div>
+    <p class="scan-hint">Tap the field, then use your keyboard's <strong>Scan Text</strong> camera icon to capture a car's toy number. Review the code, then confirm to add it.</p>
     <p class="toast" id="toast" role="status" aria-live="polite"></p>
   </section>
 
@@ -378,6 +440,7 @@
 
     <div class="export-wrap">
       <button id="export-btn" class="export-btn" disabled>Export Collection to CSV</button>
+      <button id="clear-all-btn" class="clear-all-btn" disabled>Delete All Scanned Cars</button>
     </div>
   </section>
 </main>

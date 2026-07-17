@@ -11,6 +11,10 @@
     emptyState: document.getElementById("empty-state"),
     count: document.getElementById("collection-count"),
     exportBtn: document.getElementById("export-btn"),
+    clearAllBtn: document.getElementById("clear-all-btn"),
+    confirmationActions: document.getElementById("confirmation-actions"),
+    confirmAddBtn: document.getElementById("confirm-add-btn"),
+    clearInputBtn: document.getElementById("clear-input-btn"),
   };
 
   let collection = loadCollection();
@@ -129,16 +133,40 @@
     setTimeout(() => els.input.classList.remove("flash-success"), 350);
   }
 
+  function showConfirmation() {
+    els.confirmationActions.classList.add("show");
+  }
+
+  function hideConfirmation() {
+    els.confirmationActions.classList.remove("show");
+  }
+
   function handleInput() {
     const raw = els.input.value;
 
     // iOS Live Text can insert stray spaces or lowercase letters
-    // (e.g. "jbb 55-n522"). Normalize before matching so the regex
-    // sees a clean, contiguous run of characters.
+    // (e.g. "jbb 55-n522"). Normalize so the field shows, and the
+    // user edits, a clean value before anything is saved.
     const sanitized = raw.replace(/\s+/g, "").toUpperCase();
+    if (sanitized !== raw) {
+      els.input.value = sanitized;
+    }
 
+    if (sanitized.length > 0) {
+      showConfirmation();
+    } else {
+      hideConfirmation();
+    }
+  }
+
+  function confirmAndAdd() {
+    const sanitized = els.input.value.replace(/\s+/g, "").toUpperCase();
     const match = sanitized.match(CODE_PATTERN);
-    if (!match) return; // wait for a complete, valid code
+
+    if (!match) {
+      showToast("Enter a valid 5-character code");
+      return;
+    }
 
     const code = match[0];
     const newQty = addToCollection(code);
@@ -146,9 +174,16 @@
     // Immediate refocus keeps the keyboard (and Scan Text) open and
     // ready for the next car without the user tapping again.
     els.input.value = "";
+    hideConfirmation();
     els.input.focus();
     flashSuccess();
     showToast(newQty > 1 ? `Scanned ${code} — now x${newQty}` : `Scanned ${code}`);
+  }
+
+  function clearInput() {
+    els.input.value = "";
+    hideConfirmation();
+    els.input.focus();
   }
 
   // ---------- Rendering ----------
@@ -156,6 +191,7 @@
   function render() {
     els.count.textContent = `${collection.length} car${collection.length === 1 ? "" : "s"}`;
     els.exportBtn.disabled = collection.length === 0;
+    els.clearAllBtn.disabled = collection.length === 0;
 
     if (collection.length === 0) {
       els.emptyState.style.display = "block";
@@ -284,14 +320,21 @@
       });
 
     const csvContent = rows.map((r) => r.join(", ")).join("\n");
-    const uri = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+
+    // Use a Blob + object URL instead of a data: URI — iOS Safari and
+    // installed PWAs block data: URI downloads for security reasons.
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
 
     const link = document.createElement("a");
-    link.setAttribute("href", uri);
+    link.setAttribute("href", url);
     link.setAttribute("download", `garage-log-${dateStamp()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    // Clean up the object URL.
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   }
 
   function dateStamp() {
@@ -300,11 +343,37 @@
     return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
   }
 
+  // ---------- Clear all ----------
+
+  function clearAllCollection() {
+    const confirmed = confirm(
+      "Are you sure you want to completely erase your collection? This action cannot be undone."
+    );
+    if (!confirmed) return;
+
+    collection = [];
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (err) {
+      console.error("Failed to clear collection from storage:", err);
+    }
+    render();
+  }
+
   // ---------- Init ----------
 
   function init() {
     els.input.addEventListener("input", handleInput);
+    els.input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        confirmAndAdd();
+      }
+    });
+    els.confirmAddBtn.addEventListener("click", confirmAndAdd);
+    els.clearInputBtn.addEventListener("click", clearInput);
     els.exportBtn.addEventListener("click", exportCsv);
+    els.clearAllBtn.addEventListener("click", clearAllCollection);
     render();
 
     if ("serviceWorker" in navigator) {
