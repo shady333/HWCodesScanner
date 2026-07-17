@@ -1,67 +1,51 @@
-/* Garage Log — Hot Wheels Scanner service worker.
-   Caches the app shell so it loads offline after the first visit.
-   Tesseract.js core/worker/lang files are fetched from the CDN and cached
-   opportunistically as they're requested. */
-
-var CACHE_NAME = 'garage-log-v2';
-var APP_SHELL = [
-  './',
-  './index.html',
-  './app.js',
-  './manifest.json',
-  './icon.svg'
+// Garage Log service worker — caches the app shell for offline use.
+const CACHE_NAME = "garage-log-v1";
+const APP_SHELL = [
+  "./",
+  "./index.html",
+  "./app.js",
+  "./manifest.json",
+  "./icon.svg"
 ];
 
-self.addEventListener('install', function(event){
+self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(function(cache){
-      return cache.addAll(APP_SHELL);
-    }).then(function(){
-      return self.skipWaiting();
-    })
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
+  self.skipWaiting();
 });
 
-self.addEventListener('activate', function(event){
+self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then(function(keys){
-      return Promise.all(
-        keys.filter(function(key){ return key !== CACHE_NAME; })
-            .map(function(key){ return caches.delete(key); })
-      );
-    }).then(function(){
-      return self.clients.claim();
-    })
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      )
+    )
   );
+  self.clients.claim();
 });
 
-self.addEventListener('fetch', function(event){
-  var req = event.request;
-
-  /* Only handle GET requests. */
-  if(req.method !== 'GET') return;
+// Cache-first for app shell assets, falling back to network, with a
+// network-first-ish refresh so updates still propagate over time.
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
 
   event.respondWith(
-    caches.match(req).then(function(cached){
-      if(cached) return cached;
+    caches.match(event.request).then((cached) => {
+      const networkFetch = fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => cached);
 
-      return fetch(req).then(function(response){
-        /* Cache successful same-origin and CDN responses for offline use
-           (e.g. Tesseract.js scripts, wasm, and trained data files). */
-        if(response && response.status === 200){
-          var copy = response.clone();
-          caches.open(CACHE_NAME).then(function(cache){
-            cache.put(req, copy);
-          });
-        }
-        return response;
-      }).catch(function(){
-        /* Offline and not cached — fall back to the app shell for
-           navigation requests so the UI still loads. */
-        if(req.mode === 'navigate'){
-          return caches.match('./index.html');
-        }
-      });
+      return cached || networkFetch;
     })
   );
 });

@@ -1,17 +1,17 @@
 {
-  "name": "Garage Log — Hot Wheels Scanner",
+  "name": "Garage Log — Hot Wheels Collection",
   "short_name": "Garage Log",
-  "description": "Scan Hot Wheels Toy Number codes with your camera and export your collection to CSV.",
+  "description": "Scan, log, and export your Hot Wheels toy number collection.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "background_color": "#14151A",
-  "theme_color": "#14151A",
+  "orientation": "portrait",
+  "background_color": "#141414",
+  "theme_color": "#141414",
   "icons": [
     {
-      "src": "icon.svg",
-      "sizes": "192x192 512x512",
+      "src": "./icon.svg",
+      "sizes": "192x192 512x512 any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
