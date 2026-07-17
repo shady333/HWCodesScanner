@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Garage Log — Hot Wheels Scanner</title>
+<meta name="theme-color" content="#14151A">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --asphalt-black:#14151A;
+    --asphalt-mid:#1F2127;
+    --asphalt-hi:#2A2D35;
+    --racing-orange:#FF5A1F;
+    --racing-orange-dim:#B5411A;
+    --electric-yellow:#FFC93C;
+    --chrome:#D7DAE0;
+    --chrome-dim:#7A7F89;
+    --success-green:#3CCB6F;
+    --danger-red:#E23B3B;
+    --hairline: rgba(215,218,224,0.12);
+  }
+
+  *{ box-sizing:border-box; }
+
+  html{ background:var(--asphalt-black); }
+
+  /* Body kept to standard document flow per spec — no flex/grid here. */
+  body{
+    margin:0;
+    padding:0;
+    background:var(--asphalt-black);
+    color:var(--chrome);
+    font-family:'JetBrains Mono', monospace;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:48px;
+  }
+
+  h1,h2,h3, .display{
+    font-family:'Oswald', sans-serif;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    margin:0;
+  }
+
+  /* ---------- Header ---------- */
+  header.app-header{
+    display:block;
+    background:linear-gradient(180deg, var(--asphalt-mid) 0%, var(--asphalt-black) 100%);
+    border-bottom:3px solid var(--racing-orange);
+    padding:18px 16px 14px;
+    text-align:center;
+  }
+  header.app-header .flag{ font-size:13px; letter-spacing:0.3em; color:var(--racing-orange); display:block; margin-bottom:4px; }
+  header.app-header h1{ font-size:22px; font-weight:700; color:var(--chrome); }
+  header.app-header .sub{ display:block; font-size:11px; color:var(--chrome-dim); margin-top:4px; letter-spacing:0.08em; }
+
+  /* ---------- Scanner section ---------- */
+  section.scanner{
+    padding:18px 16px 8px;
+    text-align:center;
+  }
+
+  .viewfinder{
+    position:relative;
+    width:100%;
+    max-width:480px;
+    margin:0 auto;
+    aspect-ratio: 4 / 3;
+    background:#000;
+    border-radius:6px;
+    overflow:hidden;
+    border:1px solid var(--hairline);
+  }
+
+  .viewfinder video{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+
+  .viewfinder canvas{ display:none; }
+
+  /* Target reticle: corner brackets, racing style */
+  .reticle{
+    position:absolute;
+    top:50%; left:50%;
+    width:62%;
+    height:32%;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+  }
+  .reticle .corner{
+    position:absolute;
+    width:22px; height:22px;
+    border:3px solid var(--electric-yellow);
+  }
+  .reticle .corner.tl{ top:-2px; left:-2px; border-right:none; border-bottom:none; }
+  .reticle .corner.tr{ top:-2px; right:-2px; border-left:none; border-bottom:none; }
+  .reticle .corner.bl{ bottom:-2px; left:-2px; border-right:none; border-top:none; }
+  .reticle .corner.br{ bottom:-2px; right:-2px; border-left:none; border-top:none; }
+
+  .reticle .scanline{
+    position:absolute;
+    left:4px; right:4px;
+    height:2px;
+    background:var(--racing-orange);
+    box-shadow:0 0 8px 1px var(--racing-orange);
+    top:0;
+    opacity:0;
+  }
+  .reticle.scanning .scanline{
+    opacity:1;
+    animation: sweep 1.1s linear infinite;
+  }
+  @keyframes sweep{
+    0%{ top:0; }
+    100%{ top:100%; }
+  }
+
+  .viewfinder-hint{
+    position:absolute;
+    bottom:8px; left:0; right:0;
+    text-align:center;
+    font-size:10px;
+    letter-spacing:0.08em;
+    color:var(--chrome-dim);
+    text-shadow:0 1px 2px #000;
+  }
+
+  .scan-controls{
+    margin-top:18px;
+    text-align:center;
+  }
+
+  button.scan-btn{
+    width:84px; height:84px;
+    border-radius:50%;
+    background:var(--racing-orange);
+    border:4px solid var(--electric-yellow);
+    color:#14151A;
+    font-family:'Oswald', sans-serif;
+    font-weight:700;
+    font-size:14px;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    cursor:pointer;
+    position:relative;
+    box-shadow:0 4px 0 var(--racing-orange-dim);
+    transition:transform 0.08s ease;
+  }
+  button.scan-btn:active{ transform:translateY(3px); box-shadow:0 1px 0 var(--racing-orange-dim); }
+  button.scan-btn:disabled{ opacity:0.6; cursor:not-allowed; }
+
+  button.scan-btn .ring{
+    position:absolute;
+    inset:-8px;
+    border-radius:50%;
+    border:2px solid var(--racing-orange);
+    opacity:0;
+  }
+  button.scan-btn.busy .ring{
+    opacity:1;
+    animation:pulse 1s ease-out infinite;
+  }
+  @keyframes pulse{
+    0%{ transform:scale(0.9); opacity:0.9; }
+    100%{ transform:scale(1.4); opacity:0; }
+  }
+
+  .status-line{
+    margin-top:12px;
+    font-size:12px;
+    min-height:16px;
+    color:var(--chrome-dim);
+  }
+  .status-line.err{ color:var(--danger-red); }
+  .status-line.ok{ color:var(--success-green); }
+
+  /* ---------- Camera error card ---------- */
+  .cam-error{
+    display:none;
+    max-width:480px;
+    margin:14px auto 0;
+    background:var(--asphalt-mid);
+    border:1px solid var(--danger-red);
+    border-radius:6px;
+    padding:14px;
+    font-size:12px;
+    text-align:left;
+    color:var(--chrome);
+  }
+  .cam-error strong{ color:var(--danger-red); display:block; margin-bottom:6px; font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.04em;}
+
+  /* ---------- Checkered divider ---------- */
+  .checker-strip{
+    height:14px;
+    margin:26px 0 0;
+    background-image:
+      linear-gradient(45deg, var(--chrome) 25%, transparent 25%),
+      linear-gradient(-45deg, var(--chrome) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, var(--chrome) 75%),
+      linear-gradient(-45deg, transparent 75%, var(--chrome) 75%);
+    background-size:14px 14px;
+    background-position:0 0, 0 7px, 7px -7px, -7px 0px;
+    opacity:0.9;
+  }
+
+  /* ---------- Collection section ---------- */
+  section.collection{
+    padding:14px 16px 4px;
+  }
+
+  .collection-head{
+    display:block;
+    padding:10px 12px;
+    background:var(--asphalt-mid);
+    border-radius:4px 4px 0 0;
+    border:1px solid var(--hairline);
+    border-bottom:none;
+  }
+  .collection-head h2{ font-size:15px; color:var(--chrome); display:inline; }
+  .collection-head .count{ float:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--racing-orange); font-weight:700; }
+
+  .collection-body{
+    border:1px solid var(--hairline);
+    border-radius:0 0 4px 4px;
+    background:var(--asphalt-black);
+  }
+
+  .empty-state{
+    padding:28px 16px;
+    text-align:center;
+    color:var(--chrome-dim);
+    font-size:12px;
+    line-height:1.6;
+  }
+
+  ul.item-list{
+    list-style:none;
+    margin:0;
+    padding:0;
+  }
+
+  ul.item-list li{
+    display:block;
+    padding:10px 12px;
+    border-bottom:1px solid var(--hairline);
+  }
+  ul.item-list li:last-child{ border-bottom:none; }
+
+  .row-top{
+    display:table;
+    width:100%;
+  }
+  .row-code{
+    display:table-cell;
+    vertical-align:middle;
+    font-size:16px;
+    font-weight:700;
+    letter-spacing:0.03em;
+    color:var(--electric-yellow);
+  }
+  .row-code input{
+    background:var(--asphalt-mid);
+    border:1px solid var(--racing-orange);
+    color:var(--electric-yellow);
+    font-family:inherit;
+    font-size:15px;
+    font-weight:700;
+    padding:3px 6px;
+    border-radius:3px;
+    width:110px;
+    text-transform:uppercase;
+  }
+  .row-meta{
+    display:table-cell;
+    vertical-align:middle;
+    text-align:right;
+    font-size:10px;
+    color:var(--chrome-dim);
+    white-space:nowrap;
+  }
+
+  .row-actions{
+    display:table;
+    width:100%;
+    margin-top:8px;
+  }
+  .qty-group{
+    display:table-cell;
+    vertical-align:middle;
+  }
+  .qty-group button{
+    width:28px; height:28px;
+    border-radius:3px;
+    border:1px solid var(--hairline);
+    background:var(--asphalt-mid);
+    color:var(--chrome);
+    font-family:'JetBrains Mono',monospace;
+    font-size:14px;
+    cursor:pointer;
+    line-height:1;
+  }
+  .qty-group button.minus{ color:var(--danger-red); }
+  .qty-group button.plus{ color:var(--success-green); }
+  .qty-value{
+    display:inline-block;
+    min-width:30px;
+    text-align:center;
+    font-weight:700;
+    font-size:14px;
+    color:var(--chrome);
+  }
+  .row-buttons{
+    display:table-cell;
+    vertical-align:middle;
+    text-align:right;
+  }
+  .row-buttons button{
+    background:none;
+    border:1px solid var(--hairline);
+    color:var(--chrome-dim);
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    padding:5px 9px;
+    border-radius:3px;
+    cursor:pointer;
+    margin-left:6px;
+  }
+  .row-buttons button.edit-btn:hover{ color:var(--electric-yellow); border-color:var(--electric-yellow); }
+  .row-buttons button.del-btn:hover{ color:var(--danger-red); border-color:var(--danger-red); }
+  .row-buttons button.save-btn{ color:var(--success-green); border-color:var(--success-green); display:none; }
+
+  li.editing .row-buttons button.edit-btn{ display:none; }
+  li.editing .row-buttons button.save-btn{ display:inline-block; }
+  li:not(.editing) .row-code .code-text{ display:inline; }
+  li:not(.editing) .row-code input{ display:none; }
+  li.editing .row-code .code-text{ display:none; }
+  li.editing .row-code input{ display:inline-block; }
+
+  /* ---------- Export ---------- */
+  .export-wrap{
+    padding:16px 0 8px;
+    text-align:center;
+  }
+  button.export-btn{
+    background:var(--asphalt-mid);
+    border:2px solid var(--racing-orange);
+    color:var(--racing-orange);
+    font-family:'Oswald',sans-serif;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    font-size:13px;
+    padding:12px 22px;
+    border-radius:4px;
+    cursor:pointer;
+    width:100%;
+    max-width:480px;
+  }
+  button.export-btn:disabled{ opacity:0.4; cursor:not-allowed; }
+  button.export-btn:not(:disabled):active{ background:var(--racing-orange); color:#14151A; }
+
+  footer.app-footer{
+    display:block;
+    text-align:center;
+    padding:18px 16px 6px;
+    font-size:10px;
+    color:var(--chrome-dim);
+    letter-spacing:0.06em;
+  }
+
+  @media (min-width: 640px){
+    header.app-header h1{ font-size:26px; }
+    section.scanner, section.collection{ max-width:520px; margin:0 auto; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .reticle.scanning .scanline{ animation:none; opacity:1; }
+    button.scan-btn.busy .ring{ animation:none; opacity:0.4; }
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <span class="flag">⚑ ⚑ ⚑</span>
+  <h1>Garage Log</h1>
+  <span class="sub">Hot Wheels Toy Number Scanner</span>
+</header>
+
+<section class="scanner">
+  <div class="viewfinder" id="viewfinder">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="captureCanvas"></canvas>
+    <canvas id="cropCanvas"></canvas>
+    <div class="reticle" id="reticle">
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+      <div class="scanline"></div>
+    </div>
+    <div class="viewfinder-hint">ALIGN CODE INSIDE THE BRACKETS</div>
+  </div>
+
+  <div class="cam-error" id="camError">
+    <strong>Camera unavailable</strong>
+    <span id="camErrorMsg">Grant camera access to start scanning. Reload the page after allowing permission in your browser settings.</span>
+  </div>
+
+  <div class="scan-controls">
+    <button class="scan-btn" id="scanBtn" disabled>
+      <span class="ring"></span>
+      <span class="label">SCAN</span>
+    </button>
+    <div class="status-line" id="statusLine">Starting camera…</div>
+  </div>
+</section>
+
+<div class="checker-strip"></div>
+
+<section class="collection">
+  <div class="collection-head">
+    <h2>Collection</h2>
+    <span class="count" id="itemCount">0 cars</span>
+  </div>
+  <div class="collection-body">
+    <div class="empty-state" id="emptyState">No cars scanned yet.<br>Aim, tap SCAN, repeat.</div>
+    <ul class="item-list" id="itemList"></ul>
+  </div>
+
+  <div class="export-wrap">
+    <button class="export-btn" id="exportBtn" disabled>Export Collection to CSV</button>
+  </div>
+</section>
+
+<footer class="app-footer">Runs fully on-device · nothing leaves your phone</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var STORAGE_KEY = 'garageLogCollection';
+
+  /* ---------------- State ---------------- */
+  var collection = loadCollection();
+  var tesseractWorker = null;
+  var workerReady = false;
+  var streamRef = null;
+
+  /* ---------------- DOM refs ---------------- */
+  var video = document.getElementById('video');
+  var captureCanvas = document.getElementById('captureCanvas');
+  var cropCanvas = document.getElementById('cropCanvas');
+  var reticle = document.getElementById('reticle');
+  var scanBtn = document.getElementById('scanBtn');
+  var statusLine = document.getElementById('statusLine');
+  var camError = document.getElementById('camError');
+  var camErrorMsg = document.getElementById('camErrorMsg');
+  var itemList = document.getElementById('itemList');
+  var emptyState = document.getElementById('emptyState');
+  var itemCount = document.getElementById('itemCount');
+  var exportBtn = document.getElementById('exportBtn');
+
+  /* ---------------- Storage ---------------- */
+  function loadCollection(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }catch(e){
+      console.warn('Could not read saved collection', e);
+      return [];
+    }
+  }
+
+  function saveCollection(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(collection));
+    }catch(e){
+      console.warn('Could not save collection', e);
+    }
+  }
+
+  /* ---------------- Camera setup ---------------- */
+  async function initCamera(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      showCamError('This browser does not support camera access.');
+      return;
+    }
+    try{
+      var constraints = {
+        audio:false,
+        video:{
+          facingMode:{ ideal:'environment' },
+          width:{ ideal:1280 },
+          height:{ ideal:960 },
+          advanced:[{ focusMode:'continuous' }]
+        }
+      };
+      var stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef = stream;
+      video.srcObject = stream;
+      await video.play();
+      setStatus('Camera ready. Loading OCR engine…');
+      await initTesseract();
+    }catch(err){
+      console.error(err);
+      showCamError(err && err.message ? err.message : 'Unable to access the camera.');
+    }
+  }
+
+  function showCamError(msg){
+    camError.style.display = 'block';
+    camErrorMsg.textContent = msg;
+    setStatus('Camera unavailable', 'err');
+  }
+
+  /* ---------------- Tesseract setup ---------------- */
+  async function initTesseract(){
+    try{
+      tesseractWorker = await Tesseract.createWorker('eng');
+      await tesseractWorker.setParameters({
+        tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        tessedit_pageseg_mode:'7' /* treat crop as a single line of text */
+      });
+      workerReady = true;
+      scanBtn.disabled = false;
+      setStatus('Ready — aim at a Toy Number and tap SCAN.');
+    }catch(err){
+      console.error(err);
+      setStatus('OCR engine failed to load. Reload the page to retry.', 'err');
+    }
+  }
+
+  function setStatus(msg, kind){
+    statusLine.textContent = msg;
+    statusLine.className = 'status-line' + (kind ? ' ' + kind : '');
+  }
+
+  /* ---------------- Capture + crop + preprocess ---------------- */
+  function captureReticleCrop(){
+    var vw = video.videoWidth;
+    var vh = video.videoHeight;
+    if(!vw || !vh) return null;
+
+    captureCanvas.width = vw;
+    captureCanvas.height = vh;
+    var ctx = captureCanvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, vw, vh);
+
+    /* Reticle is 62% width x 32% height, centered — matches CSS. */
+    var boxW = vw * 0.62;
+    var boxH = vh * 0.32;
+    var boxX = (vw - boxW) / 2;
+    var boxY = (vh - boxH) / 2;
+
+    /* Small margin so we don't clip character edges. */
+    var pad = 0.06;
+    boxX -= boxW * pad; boxY -= boxH * pad;
+    boxW += boxW * pad * 2; boxH += boxH * pad * 2;
+    boxX = Math.max(0, boxX); boxY = Math.max(0, boxY);
+    boxW = Math.min(vw - boxX, boxW); boxH = Math.min(vh - boxY, boxH);
+
+    /* Upscale small crops for better OCR accuracy. */
+    var scale = boxW < 500 ? (500 / boxW) : 1;
+    var outW = Math.round(boxW * scale);
+    var outH = Math.round(boxH * scale);
+
+    cropCanvas.width = outW;
+    cropCanvas.height = outH;
+    var cctx = cropCanvas.getContext('2d');
+    cctx.drawImage(captureCanvas, boxX, boxY, boxW, boxH, 0, 0, outW, outH);
+
+    grayscaleAndContrast(cctx, outW, outH);
+
+    return cropCanvas;
+  }
+
+  function grayscaleAndContrast(ctx, w, h){
+    var imgData = ctx.getImageData(0, 0, w, h);
+    var data = imgData.data;
+
+    /* First pass: convert to luminance grayscale. */
+    var i, gray, min = 255, max = 0;
+    var grays = new Uint8ClampedArray(w * h);
+    for(i = 0; i < data.length; i += 4){
+      gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+      var idx = i / 4;
+      grays[idx] = gray;
+      if(gray < min) min = gray;
+      if(gray > max) max = gray;
+    }
+
+    /* Second pass: stretch contrast so text pops from cardboard background. */
+    var range = Math.max(1, max - min);
+    for(i = 0; i < data.length; i += 4){
+      var idx = i / 4;
+      var stretched = ((grays[idx] - min) / range) * 255;
+      data[i] = data[i+1] = data[i+2] = stretched;
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  /* ---------------- Scan flow ---------------- */
+  async function handleScan(){
+    if(!workerReady || scanBtn.disabled) return;
+
+    var crop = captureReticleCrop();
+    if(!crop){
+      setStatus('Camera not ready yet — try again in a moment.', 'err');
+      return;
+    }
+
+    scanBtn.disabled = true;
+    scanBtn.classList.add('busy');
+    reticle.classList.add('scanning');
+    setStatus('Reading code…');
+
+    try{
+      var result = await tesseractWorker.recognize(crop);
+      var raw = (result && result.data && result.data.text) ? result.data.text : '';
+      var cleaned = cleanCode(raw);
+
+      if(cleaned){
+        addOrIncrement(cleaned);
+        setStatus('Scanned ' + cleaned + '.', 'ok');
+      }else{
+        setStatus('No readable code found — steady the shot and try again.', 'err');
+      }
+    }catch(err){
+      console.error(err);
+      setStatus('Scan failed. Try again.', 'err');
+    }finally{
+      scanBtn.disabled = false;
+      scanBtn.classList.remove('busy');
+      reticle.classList.remove('scanning');
+    }
+  }
+
+  function cleanCode(raw){
+    var stripped = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase().trim();
+    return stripped;
+  }
+
+  /* ---------------- Collection logic ---------------- */
+  function addOrIncrement(code){
+    var existing = collection.find(function(item){ return item.code === code; });
+    if(existing){
+      existing.quantity += 1;
+    }else{
+      collection.push({
+        code: code,
+        scanned_at: new Date().toISOString(),
+        quantity: 1
+      });
+    }
+    saveCollection();
+    renderCollection();
+  }
+
+  function adjustQuantity(code, delta){
+    var item = collection.find(function(i){ return i.code === code; });
+    if(!item) return;
+    item.quantity += delta;
+    if(item.quantity <= 0){
+      collection = collection.filter(function(i){ return i.code !== code; });
+    }
+    saveCollection();
+    renderCollection();
+  }
+
+  function removeItem(code){
+    collection = collection.filter(function(i){ return i.code !== code; });
+    saveCollection();
+    renderCollection();
+  }
+
+  function renameItem(oldCode, newCodeRaw){
+    var newCode = cleanCode(newCodeRaw);
+    if(!newCode){ renderCollection(); return; }
+    if(newCode === oldCode){ renderCollection(); return; }
+
+    var target = collection.find(function(i){ return i.code === oldCode; });
+    if(!target) return;
+
+    var duplicate = collection.find(function(i){ return i.code === newCode; });
+    if(duplicate){
+      duplicate.quantity += target.quantity;
+      collection = collection.filter(function(i){ return i.code !== oldCode; });
+    }else{
+      target.code = newCode;
+    }
+    saveCollection();
+    renderCollection();
+  }
+
+  function formatTimestamp(iso){
+    try{
+      var d = new Date(iso);
+      return d.toLocaleDateString(undefined, { month:'short', day:'numeric' }) + ' ' +
+             d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+    }catch(e){
+      return '';
+    }
+  }
+
+  function renderCollection(){
+    itemList.innerHTML = '';
+
+    if(collection.length === 0){
+      emptyState.style.display = 'block';
+      itemList.style.display = 'none';
+      exportBtn.disabled = true;
+      itemCount.textContent = '0 cars';
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    itemList.style.display = 'block';
+    exportBtn.disabled = false;
+
+    var totalUnits = collection.reduce(function(sum, i){ return sum + i.quantity; }, 0);
+    itemCount.textContent = totalUnits + (totalUnits === 1 ? ' car' : ' cars') +
+      ' · ' + collection.length + (collection.length === 1 ? ' code' : ' codes');
+
+    var sorted = collection.slice().sort(function(a,b){ return a.code.localeCompare(b.code); });
+
+    sorted.forEach(function(item){
+      var li = document.createElement('li');
+      li.dataset.code = item.code;
+
+      var rowTop = document.createElement('div');
+      rowTop.className = 'row-top';
+
+      var codeCell = document.createElement('div');
+      codeCell.className = 'row-code';
+      var codeText = document.createElement('span');
+      codeText.className = 'code-text';
+      codeText.textContent = item.code;
+      var codeInput = document.createElement('input');
+      codeInput.type = 'text';
+      codeInput.value = item.code;
+      codeInput.maxLength = 20;
+      codeCell.appendChild(codeText);
+      codeCell.appendChild(codeInput);
+
+      var metaCell = document.createElement('div');
+      metaCell.className = 'row-meta';
+      metaCell.textContent = 'FIRST SCAN ' + formatTimestamp(item.scanned_at);
+
+      rowTop.appendChild(codeCell);
+      rowTop.appendChild(metaCell);
+
+      var rowActions = document.createElement('div');
+      rowActions.className = 'row-actions';
+
+      var qtyGroup = document.createElement('div');
+      qtyGroup.className = 'qty-group';
+      var minusBtn = document.createElement('button');
+      minusBtn.className = 'minus';
+      minusBtn.textContent = '−';
+      minusBtn.setAttribute('aria-label', 'Decrease quantity of ' + item.code);
+      var qtyValue = document.createElement('span');
+      qtyValue.className = 'qty-value';
+      qtyValue.textContent = item.quantity;
+      var plusBtn = document.createElement('button');
+      plusBtn.className = 'plus';
+      plusBtn.textContent = '+';
+      plusBtn.setAttribute('aria-label', 'Increase quantity of ' + item.code);
+      qtyGroup.appendChild(minusBtn);
+      qtyGroup.appendChild(qtyValue);
+      qtyGroup.appendChild(plusBtn);
+
+      var rowButtons = document.createElement('div');
+      rowButtons.className = 'row-buttons';
+      var editBtn = document.createElement('button');
+      editBtn.className = 'edit-btn';
+      editBtn.textContent = 'Edit';
+      var saveBtn = document.createElement('button');
+      saveBtn.className = 'save-btn';
+      saveBtn.textContent = 'Save';
+      var delBtn = document.createElement('button');
+      delBtn.className = 'del-btn';
+      delBtn.textContent = 'Remove';
+      rowButtons.appendChild(editBtn);
+      rowButtons.appendChild(saveBtn);
+      rowButtons.appendChild(delBtn);
+
+      rowActions.appendChild(qtyGroup);
+      rowActions.appendChild(rowButtons);
+
+      li.appendChild(rowTop);
+      li.appendChild(rowActions);
+
+      minusBtn.addEventListener('click', function(){ adjustQuantity(item.code, -1); });
+      plusBtn.addEventListener('click', function(){ adjustQuantity(item.code, 1); });
+      delBtn.addEventListener('click', function(){ removeItem(item.code); });
+      editBtn.addEventListener('click', function(){
+        li.classList.add('editing');
+        codeInput.focus();
+        codeInput.select();
+      });
+      saveBtn.addEventListener('click', function(){
+        li.classList.remove('editing');
+        renameItem(item.code, codeInput.value);
+      });
+      codeInput.addEventListener('keydown', function(e){
+        if(e.key === 'Enter'){ saveBtn.click(); }
+        if(e.key === 'Escape'){ li.classList.remove('editing'); codeInput.value = item.code; }
+      });
+
+      itemList.appendChild(li);
+    });
+  }
+
+  /* ---------------- CSV export ---------------- */
+  function escapeCsvField(field){
+    var str = String(field).trim();
+    if(/[",\n]/.test(str)){
+      str = '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+  }
+
+  function exportCsv(){
+    if(collection.length === 0) return;
+
+    var rows = [['Model Code', 'Quantity', 'First Scanned']];
+    var sorted = collection.slice().sort(function(a,b){ return a.code.localeCompare(b.code); });
+
+    sorted.forEach(function(item){
+      rows.push([
+        escapeCsvField(item.code),
+        escapeCsvField(item.quantity),
+        escapeCsvField(formatTimestamp(item.scanned_at))
+      ]);
+    });
+
+    var csvContent = rows.map(function(r){ return r.join(','); }).join('\n');
+    var uri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
+
+    var link = document.createElement('a');
+    link.setAttribute('href', uri);
+    link.setAttribute('download', 'garage-log-' + new Date().toISOString().slice(0,10) + '.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  /* ---------------- Wire up ---------------- */
+  scanBtn.addEventListener('click', handleScan);
+  exportBtn.addEventListener('click', exportCsv);
+
+  window.addEventListener('beforeunload', function(){
+    if(streamRef){
+      streamRef.getTracks().forEach(function(t){ t.stop(); });
+    }
+    if(tesseractWorker){
+      tesseractWorker.terminate();
+    }
+  });
+
+  /* ---------------- Service worker ---------------- */
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js').catch(function(err){
+        console.warn('Service worker registration failed', err);
+      });
+    });
+  }
+
+  /* ---------------- Boot ---------------- */
+  renderCollection();
+  initCamera();
+
+})();
+</script>
+
+</body>
+</html>
