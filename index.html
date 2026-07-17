@@ -87,28 +87,31 @@
 
   .viewfinder canvas{ display:none; }
 
-  /* Target reticle: corner brackets, racing style */
+  /* Target box: tight, highly visible solid yellow rectangle. */
   .reticle{
     position:absolute;
     top:50%; left:50%;
-    width:62%;
-    height:32%;
+    width:55%;
+    height:24%;
     transform:translate(-50%,-50%);
     pointer-events:none;
+    border:3px solid var(--electric-yellow);
+    box-shadow:0 0 0 2000px rgba(0,0,0,0.35);
+    border-radius:2px;
   }
   .reticle .corner{
     position:absolute;
-    width:22px; height:22px;
-    border:3px solid var(--electric-yellow);
+    width:16px; height:16px;
+    border:4px solid var(--racing-orange);
   }
-  .reticle .corner.tl{ top:-2px; left:-2px; border-right:none; border-bottom:none; }
-  .reticle .corner.tr{ top:-2px; right:-2px; border-left:none; border-bottom:none; }
-  .reticle .corner.bl{ bottom:-2px; left:-2px; border-right:none; border-top:none; }
-  .reticle .corner.br{ bottom:-2px; right:-2px; border-left:none; border-top:none; }
+  .reticle .corner.tl{ top:-4px; left:-4px; border-right:none; border-bottom:none; }
+  .reticle .corner.tr{ top:-4px; right:-4px; border-left:none; border-bottom:none; }
+  .reticle .corner.bl{ bottom:-4px; left:-4px; border-right:none; border-top:none; }
+  .reticle .corner.br{ bottom:-4px; right:-4px; border-left:none; border-top:none; }
 
   .reticle .scanline{
     position:absolute;
-    left:4px; right:4px;
+    left:0; right:0;
     height:2px;
     background:var(--racing-orange);
     box-shadow:0 0 8px 1px var(--racing-orange);
@@ -132,7 +135,52 @@
     letter-spacing:0.08em;
     color:var(--chrome-dim);
     text-shadow:0 1px 2px #000;
+    z-index:2;
   }
+
+  /* ---------- Zoom controls ---------- */
+  .zoom-panel{
+    max-width:480px;
+    margin:12px auto 0;
+    background:var(--asphalt-mid);
+    border:1px solid var(--hairline);
+    border-radius:6px;
+    padding:10px 14px;
+    text-align:left;
+  }
+  .zoom-panel .zoom-label{
+    display:block;
+    font-family:'Oswald',sans-serif;
+    font-size:11px;
+    letter-spacing:0.08em;
+    color:var(--chrome-dim);
+    text-transform:uppercase;
+    margin-bottom:8px;
+  }
+  .zoom-panel .zoom-label .zoom-value{ color:var(--electric-yellow); font-family:'JetBrains Mono',monospace; }
+
+  .zoom-buttons{ display:block; }
+  .zoom-buttons button{
+    background:var(--asphalt-black);
+    border:1px solid var(--hairline);
+    color:var(--chrome);
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    font-weight:700;
+    padding:7px 14px;
+    border-radius:4px;
+    cursor:pointer;
+    margin-right:8px;
+  }
+  .zoom-buttons button.active{
+    border-color:var(--racing-orange);
+    color:var(--electric-yellow);
+    background:var(--racing-orange-dim);
+  }
+
+  .zoom-slider{ width:100%; accent-color:var(--racing-orange); }
+
+  .zoom-panel.hidden{ display:none; }
 
   .scan-controls{
     margin-top:18px;
@@ -410,12 +458,18 @@
       <div class="corner br"></div>
       <div class="scanline"></div>
     </div>
-    <div class="viewfinder-hint">ALIGN CODE INSIDE THE BRACKETS</div>
+    <div class="viewfinder-hint">ALIGN CODE INSIDE THE YELLOW BOX</div>
   </div>
 
   <div class="cam-error" id="camError">
     <strong>Camera unavailable</strong>
     <span id="camErrorMsg">Grant camera access to start scanning. Reload the page after allowing permission in your browser settings.</span>
+  </div>
+
+  <div class="zoom-panel hidden" id="zoomPanel">
+    <span class="zoom-label">Zoom <span class="zoom-value" id="zoomValueLabel">1.0x</span></span>
+    <div class="zoom-buttons" id="zoomButtons"></div>
+    <input type="range" class="zoom-slider hidden" id="zoomSlider" min="1" max="3" step="0.1" value="1">
   </div>
 
   <div class="scan-controls">
@@ -447,446 +501,7 @@
 <footer class="app-footer">Runs fully on-device · nothing leaves your phone</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script>
-(function(){
-  'use strict';
-
-  var STORAGE_KEY = 'garageLogCollection';
-
-  /* ---------------- State ---------------- */
-  var collection = loadCollection();
-  var tesseractWorker = null;
-  var workerReady = false;
-  var streamRef = null;
-
-  /* ---------------- DOM refs ---------------- */
-  var video = document.getElementById('video');
-  var captureCanvas = document.getElementById('captureCanvas');
-  var cropCanvas = document.getElementById('cropCanvas');
-  var reticle = document.getElementById('reticle');
-  var scanBtn = document.getElementById('scanBtn');
-  var statusLine = document.getElementById('statusLine');
-  var camError = document.getElementById('camError');
-  var camErrorMsg = document.getElementById('camErrorMsg');
-  var itemList = document.getElementById('itemList');
-  var emptyState = document.getElementById('emptyState');
-  var itemCount = document.getElementById('itemCount');
-  var exportBtn = document.getElementById('exportBtn');
-
-  /* ---------------- Storage ---------------- */
-  function loadCollection(){
-    try{
-      var raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    }catch(e){
-      console.warn('Could not read saved collection', e);
-      return [];
-    }
-  }
-
-  function saveCollection(){
-    try{
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(collection));
-    }catch(e){
-      console.warn('Could not save collection', e);
-    }
-  }
-
-  /* ---------------- Camera setup ---------------- */
-  async function initCamera(){
-    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-      showCamError('This browser does not support camera access.');
-      return;
-    }
-    try{
-      var constraints = {
-        audio:false,
-        video:{
-          facingMode:{ ideal:'environment' },
-          width:{ ideal:1280 },
-          height:{ ideal:960 },
-          advanced:[{ focusMode:'continuous' }]
-        }
-      };
-      var stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef = stream;
-      video.srcObject = stream;
-      await video.play();
-      setStatus('Camera ready. Loading OCR engine…');
-      await initTesseract();
-    }catch(err){
-      console.error(err);
-      showCamError(err && err.message ? err.message : 'Unable to access the camera.');
-    }
-  }
-
-  function showCamError(msg){
-    camError.style.display = 'block';
-    camErrorMsg.textContent = msg;
-    setStatus('Camera unavailable', 'err');
-  }
-
-  /* ---------------- Tesseract setup ---------------- */
-  async function initTesseract(){
-    try{
-      tesseractWorker = await Tesseract.createWorker('eng');
-      await tesseractWorker.setParameters({
-        tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-        tessedit_pageseg_mode:'7' /* treat crop as a single line of text */
-      });
-      workerReady = true;
-      scanBtn.disabled = false;
-      setStatus('Ready — aim at a Toy Number and tap SCAN.');
-    }catch(err){
-      console.error(err);
-      setStatus('OCR engine failed to load. Reload the page to retry.', 'err');
-    }
-  }
-
-  function setStatus(msg, kind){
-    statusLine.textContent = msg;
-    statusLine.className = 'status-line' + (kind ? ' ' + kind : '');
-  }
-
-  /* ---------------- Capture + crop + preprocess ---------------- */
-  function captureReticleCrop(){
-    var vw = video.videoWidth;
-    var vh = video.videoHeight;
-    if(!vw || !vh) return null;
-
-    captureCanvas.width = vw;
-    captureCanvas.height = vh;
-    var ctx = captureCanvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, vw, vh);
-
-    /* Reticle is 62% width x 32% height, centered — matches CSS. */
-    var boxW = vw * 0.62;
-    var boxH = vh * 0.32;
-    var boxX = (vw - boxW) / 2;
-    var boxY = (vh - boxH) / 2;
-
-    /* Small margin so we don't clip character edges. */
-    var pad = 0.06;
-    boxX -= boxW * pad; boxY -= boxH * pad;
-    boxW += boxW * pad * 2; boxH += boxH * pad * 2;
-    boxX = Math.max(0, boxX); boxY = Math.max(0, boxY);
-    boxW = Math.min(vw - boxX, boxW); boxH = Math.min(vh - boxY, boxH);
-
-    /* Upscale small crops for better OCR accuracy. */
-    var scale = boxW < 500 ? (500 / boxW) : 1;
-    var outW = Math.round(boxW * scale);
-    var outH = Math.round(boxH * scale);
-
-    cropCanvas.width = outW;
-    cropCanvas.height = outH;
-    var cctx = cropCanvas.getContext('2d');
-    cctx.drawImage(captureCanvas, boxX, boxY, boxW, boxH, 0, 0, outW, outH);
-
-    grayscaleAndContrast(cctx, outW, outH);
-
-    return cropCanvas;
-  }
-
-  function grayscaleAndContrast(ctx, w, h){
-    var imgData = ctx.getImageData(0, 0, w, h);
-    var data = imgData.data;
-
-    /* First pass: convert to luminance grayscale. */
-    var i, gray, min = 255, max = 0;
-    var grays = new Uint8ClampedArray(w * h);
-    for(i = 0; i < data.length; i += 4){
-      gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
-      var idx = i / 4;
-      grays[idx] = gray;
-      if(gray < min) min = gray;
-      if(gray > max) max = gray;
-    }
-
-    /* Second pass: stretch contrast so text pops from cardboard background. */
-    var range = Math.max(1, max - min);
-    for(i = 0; i < data.length; i += 4){
-      var idx = i / 4;
-      var stretched = ((grays[idx] - min) / range) * 255;
-      data[i] = data[i+1] = data[i+2] = stretched;
-    }
-
-    ctx.putImageData(imgData, 0, 0);
-  }
-
-  /* ---------------- Scan flow ---------------- */
-  async function handleScan(){
-    if(!workerReady || scanBtn.disabled) return;
-
-    var crop = captureReticleCrop();
-    if(!crop){
-      setStatus('Camera not ready yet — try again in a moment.', 'err');
-      return;
-    }
-
-    scanBtn.disabled = true;
-    scanBtn.classList.add('busy');
-    reticle.classList.add('scanning');
-    setStatus('Reading code…');
-
-    try{
-      var result = await tesseractWorker.recognize(crop);
-      var raw = (result && result.data && result.data.text) ? result.data.text : '';
-      var cleaned = cleanCode(raw);
-
-      if(cleaned){
-        addOrIncrement(cleaned);
-        setStatus('Scanned ' + cleaned + '.', 'ok');
-      }else{
-        setStatus('No readable code found — steady the shot and try again.', 'err');
-      }
-    }catch(err){
-      console.error(err);
-      setStatus('Scan failed. Try again.', 'err');
-    }finally{
-      scanBtn.disabled = false;
-      scanBtn.classList.remove('busy');
-      reticle.classList.remove('scanning');
-    }
-  }
-
-  function cleanCode(raw){
-    var stripped = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase().trim();
-    return stripped;
-  }
-
-  /* ---------------- Collection logic ---------------- */
-  function addOrIncrement(code){
-    var existing = collection.find(function(item){ return item.code === code; });
-    if(existing){
-      existing.quantity += 1;
-    }else{
-      collection.push({
-        code: code,
-        scanned_at: new Date().toISOString(),
-        quantity: 1
-      });
-    }
-    saveCollection();
-    renderCollection();
-  }
-
-  function adjustQuantity(code, delta){
-    var item = collection.find(function(i){ return i.code === code; });
-    if(!item) return;
-    item.quantity += delta;
-    if(item.quantity <= 0){
-      collection = collection.filter(function(i){ return i.code !== code; });
-    }
-    saveCollection();
-    renderCollection();
-  }
-
-  function removeItem(code){
-    collection = collection.filter(function(i){ return i.code !== code; });
-    saveCollection();
-    renderCollection();
-  }
-
-  function renameItem(oldCode, newCodeRaw){
-    var newCode = cleanCode(newCodeRaw);
-    if(!newCode){ renderCollection(); return; }
-    if(newCode === oldCode){ renderCollection(); return; }
-
-    var target = collection.find(function(i){ return i.code === oldCode; });
-    if(!target) return;
-
-    var duplicate = collection.find(function(i){ return i.code === newCode; });
-    if(duplicate){
-      duplicate.quantity += target.quantity;
-      collection = collection.filter(function(i){ return i.code !== oldCode; });
-    }else{
-      target.code = newCode;
-    }
-    saveCollection();
-    renderCollection();
-  }
-
-  function formatTimestamp(iso){
-    try{
-      var d = new Date(iso);
-      return d.toLocaleDateString(undefined, { month:'short', day:'numeric' }) + ' ' +
-             d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
-    }catch(e){
-      return '';
-    }
-  }
-
-  function renderCollection(){
-    itemList.innerHTML = '';
-
-    if(collection.length === 0){
-      emptyState.style.display = 'block';
-      itemList.style.display = 'none';
-      exportBtn.disabled = true;
-      itemCount.textContent = '0 cars';
-      return;
-    }
-
-    emptyState.style.display = 'none';
-    itemList.style.display = 'block';
-    exportBtn.disabled = false;
-
-    var totalUnits = collection.reduce(function(sum, i){ return sum + i.quantity; }, 0);
-    itemCount.textContent = totalUnits + (totalUnits === 1 ? ' car' : ' cars') +
-      ' · ' + collection.length + (collection.length === 1 ? ' code' : ' codes');
-
-    var sorted = collection.slice().sort(function(a,b){ return a.code.localeCompare(b.code); });
-
-    sorted.forEach(function(item){
-      var li = document.createElement('li');
-      li.dataset.code = item.code;
-
-      var rowTop = document.createElement('div');
-      rowTop.className = 'row-top';
-
-      var codeCell = document.createElement('div');
-      codeCell.className = 'row-code';
-      var codeText = document.createElement('span');
-      codeText.className = 'code-text';
-      codeText.textContent = item.code;
-      var codeInput = document.createElement('input');
-      codeInput.type = 'text';
-      codeInput.value = item.code;
-      codeInput.maxLength = 20;
-      codeCell.appendChild(codeText);
-      codeCell.appendChild(codeInput);
-
-      var metaCell = document.createElement('div');
-      metaCell.className = 'row-meta';
-      metaCell.textContent = 'FIRST SCAN ' + formatTimestamp(item.scanned_at);
-
-      rowTop.appendChild(codeCell);
-      rowTop.appendChild(metaCell);
-
-      var rowActions = document.createElement('div');
-      rowActions.className = 'row-actions';
-
-      var qtyGroup = document.createElement('div');
-      qtyGroup.className = 'qty-group';
-      var minusBtn = document.createElement('button');
-      minusBtn.className = 'minus';
-      minusBtn.textContent = '−';
-      minusBtn.setAttribute('aria-label', 'Decrease quantity of ' + item.code);
-      var qtyValue = document.createElement('span');
-      qtyValue.className = 'qty-value';
-      qtyValue.textContent = item.quantity;
-      var plusBtn = document.createElement('button');
-      plusBtn.className = 'plus';
-      plusBtn.textContent = '+';
-      plusBtn.setAttribute('aria-label', 'Increase quantity of ' + item.code);
-      qtyGroup.appendChild(minusBtn);
-      qtyGroup.appendChild(qtyValue);
-      qtyGroup.appendChild(plusBtn);
-
-      var rowButtons = document.createElement('div');
-      rowButtons.className = 'row-buttons';
-      var editBtn = document.createElement('button');
-      editBtn.className = 'edit-btn';
-      editBtn.textContent = 'Edit';
-      var saveBtn = document.createElement('button');
-      saveBtn.className = 'save-btn';
-      saveBtn.textContent = 'Save';
-      var delBtn = document.createElement('button');
-      delBtn.className = 'del-btn';
-      delBtn.textContent = 'Remove';
-      rowButtons.appendChild(editBtn);
-      rowButtons.appendChild(saveBtn);
-      rowButtons.appendChild(delBtn);
-
-      rowActions.appendChild(qtyGroup);
-      rowActions.appendChild(rowButtons);
-
-      li.appendChild(rowTop);
-      li.appendChild(rowActions);
-
-      minusBtn.addEventListener('click', function(){ adjustQuantity(item.code, -1); });
-      plusBtn.addEventListener('click', function(){ adjustQuantity(item.code, 1); });
-      delBtn.addEventListener('click', function(){ removeItem(item.code); });
-      editBtn.addEventListener('click', function(){
-        li.classList.add('editing');
-        codeInput.focus();
-        codeInput.select();
-      });
-      saveBtn.addEventListener('click', function(){
-        li.classList.remove('editing');
-        renameItem(item.code, codeInput.value);
-      });
-      codeInput.addEventListener('keydown', function(e){
-        if(e.key === 'Enter'){ saveBtn.click(); }
-        if(e.key === 'Escape'){ li.classList.remove('editing'); codeInput.value = item.code; }
-      });
-
-      itemList.appendChild(li);
-    });
-  }
-
-  /* ---------------- CSV export ---------------- */
-  function escapeCsvField(field){
-    var str = String(field).trim();
-    if(/[",\n]/.test(str)){
-      str = '"' + str.replace(/"/g, '""') + '"';
-    }
-    return str;
-  }
-
-  function exportCsv(){
-    if(collection.length === 0) return;
-
-    var rows = [['Model Code', 'Quantity', 'First Scanned']];
-    var sorted = collection.slice().sort(function(a,b){ return a.code.localeCompare(b.code); });
-
-    sorted.forEach(function(item){
-      rows.push([
-        escapeCsvField(item.code),
-        escapeCsvField(item.quantity),
-        escapeCsvField(formatTimestamp(item.scanned_at))
-      ]);
-    });
-
-    var csvContent = rows.map(function(r){ return r.join(','); }).join('\n');
-    var uri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
-
-    var link = document.createElement('a');
-    link.setAttribute('href', uri);
-    link.setAttribute('download', 'garage-log-' + new Date().toISOString().slice(0,10) + '.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
-  /* ---------------- Wire up ---------------- */
-  scanBtn.addEventListener('click', handleScan);
-  exportBtn.addEventListener('click', exportCsv);
-
-  window.addEventListener('beforeunload', function(){
-    if(streamRef){
-      streamRef.getTracks().forEach(function(t){ t.stop(); });
-    }
-    if(tesseractWorker){
-      tesseractWorker.terminate();
-    }
-  });
-
-  /* ---------------- Service worker ---------------- */
-  if('serviceWorker' in navigator){
-    window.addEventListener('load', function(){
-      navigator.serviceWorker.register('sw.js').catch(function(err){
-        console.warn('Service worker registration failed', err);
-      });
-    });
-  }
-
-  /* ---------------- Boot ---------------- */
-  renderCollection();
-  initCamera();
-
-})();
-</script>
+<script src="app.js"></script>
 
 </body>
 </html>

@@ -3,10 +3,11 @@
    Tesseract.js core/worker/lang files are fetched from the CDN and cached
    opportunistically as they're requested. */
 
-var CACHE_NAME = 'garage-log-v1';
+var CACHE_NAME = 'garage-log-v2';
 var APP_SHELL = [
   './',
   './index.html',
+  './app.js',
   './manifest.json',
   './icon.svg'
 ];
