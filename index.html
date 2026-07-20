@@ -85,6 +85,49 @@
     margin-bottom: 8px;
   }
 
+  /* Default scan params: series + price, sticky across scans */
+  .scan-params {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .param-field {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  #type-select,
+  #price-input {
+    width: 100%;
+    background: var(--bg-inset);
+    border: 1px solid var(--gray-border);
+    border-radius: 8px;
+    color: var(--white);
+    font-size: 14px;
+    font-weight: 700;
+    padding: 11px 10px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  #type-select {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%238f8f8c'><path d='M5.5 7.5l4.5 5 4.5-5z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 30px;
+  }
+
+  #type-select:focus,
+  #price-input:focus {
+    border-color: var(--orange);
+    box-shadow: 0 0 0 3px rgba(255,106,19,0.18);
+  }
+
   .scan-input-wrap {
     position: relative;
   }
@@ -132,13 +175,30 @@
     line-height: 1.5;
   }
 
-  #confirmation-actions {
+  /* ---------- Confirmation panel ---------- */
+  .confirmation-panel {
     display: none;
-    gap: 10px;
     margin-top: 12px;
   }
-  #confirmation-actions.show {
+  .confirmation-panel.show {
+    display: block;
+  }
+
+  .confirm-summary {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--gray-text);
+    text-align: center;
+    letter-spacing: 0.3px;
+  }
+  .confirm-summary strong {
+    color: var(--white);
+    font-weight: 800;
+  }
+
+  #confirmation-actions {
     display: flex;
+    gap: 10px;
   }
 
   .confirm-btn,
@@ -247,7 +307,8 @@
     grid-template-columns: 1fr auto;
     grid-template-areas:
       "code qty"
-      "meta actions";
+      "details actions"
+      "meta meta";
     row-gap: 8px;
     align-items: center;
   }
@@ -273,6 +334,59 @@
     padding: 6px 8px;
     width: 120px;
     outline: none;
+  }
+
+  .car-details {
+    grid-area: details;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--gray-text);
+  }
+
+  .car-edit-details {
+    grid-area: details;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .car-edit-details select,
+  .car-edit-details input {
+    background: var(--bg-inset);
+    border: 1px solid var(--orange);
+    border-radius: 6px;
+    color: var(--white);
+    font-weight: 700;
+    font-size: 12px;
+    padding: 6px 8px;
+    outline: none;
+  }
+  .car-edit-details select { flex: 1 1 auto; min-width: 96px; }
+  .car-edit-details input { width: 78px; }
+
+  .type-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .type-badge.mainline { background: #3a3a3a; color: var(--white); }
+  .type-badge.silver-series { background: #c9c9c9; color: #141414; }
+  .type-badge.premium { background: var(--orange); color: #141414; }
+  .type-badge.elite-64 { background: #e6c260; color: #141414; }
+  .type-badge.rlc { background: var(--red); color: #141414; }
+  .type-badge.matchbox { background: #4d9dff; color: #141414; }
+  .type-badge.undefined { background: #5a5a58; color: var(--white); }
+
+  .car-price {
+    font-weight: 700;
+    color: var(--white);
   }
 
   .car-meta {
@@ -382,13 +496,9 @@
   }
 
   @media (min-width: 480px) {
-    .car-row {
-      grid-template-columns: 1fr auto auto;
-      grid-template-areas: "code qty actions";
-      row-gap: 0;
+    .scan-params {
+      max-width: 360px;
     }
-    .car-meta { display: none; }
-    .car-meta.mobile-only { display: none; }
   }
 </style>
 </head>
@@ -401,6 +511,25 @@
 
 <main>
   <section class="scan-section">
+    <div class="scan-params">
+      <div class="param-field">
+        <label class="scan-label" for="type-select">Series</label>
+        <select id="type-select">
+          <option value="MainLine" selected>MainLine</option>
+          <option value="Silver Series">Silver Series</option>
+          <option value="Premium">Premium</option>
+          <option value="Elite 64">Elite 64</option>
+          <option value="RLC">RLC</option>
+          <option value="Matchbox">Matchbox</option>
+          <option value="UNDEFINED">UNDEFINED</option>
+        </select>
+      </div>
+      <div class="param-field">
+        <label class="scan-label" for="price-input">Price, &#8372;</label>
+        <input type="number" id="price-input" value="100" min="0" step="1" inputmode="decimal">
+      </div>
+    </div>
+
     <span class="scan-label">Scan a toy number</span>
     <div class="scan-input-wrap">
       <input
@@ -416,11 +545,16 @@
         spellcheck="false"
       >
     </div>
-    <div id="confirmation-actions">
-      <button id="confirm-add-btn" class="confirm-btn" type="button">Confirm &amp; Add</button>
-      <button id="clear-input-btn" class="clear-btn" type="button">Clear</button>
+
+    <div id="confirmation-panel" class="confirmation-panel">
+      <p class="confirm-summary" id="confirm-summary"></p>
+      <div id="confirmation-actions">
+        <button id="confirm-add-btn" class="confirm-btn" type="button">Confirm &amp; Add</button>
+        <button id="clear-input-btn" class="clear-btn" type="button">Clear</button>
+      </div>
     </div>
-    <p class="scan-hint">Tap the field, then use your keyboard's <strong>Scan Text</strong> camera icon to capture a car's toy number. Review the code, then confirm to add it.</p>
+
+    <p class="scan-hint">Tap the field, then use your keyboard's <strong>Scan Text</strong> camera icon to capture a car's toy number. Set series &amp; price above, then confirm to add it.</p>
     <p class="toast" id="toast" role="status" aria-live="polite"></p>
   </section>
 
